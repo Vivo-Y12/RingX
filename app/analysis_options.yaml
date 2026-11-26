@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+# Ringx keeps the default flutter_lints set; stricter custom rules are added
+# only when a review finds a concrete problem class.
+linter:
+  rules:
+    avoid_print: true
