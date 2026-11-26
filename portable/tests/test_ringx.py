@@ -11,6 +11,7 @@ behavior with a fake vJoy + fake hook, and a headless UI smoke test
 import os
 import queue
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -115,6 +116,40 @@ def ensure_ui_prereqs():
         print("FATAL: required packages still missing after install "
               f"attempts: {', '.join(still)}", file=sys.stderr)
         sys.exit(2)
+
+
+# --- headless display helper -------------------------------------------------
+
+def _start_xvfb(display=":7199"):
+    """Start a private Xvfb and wait until it really accepts connections.
+
+    A bare Popen is a race: on a loaded CI runner the inner script can reach
+    its first X connect before the server has bound its socket, failing the
+    whole section with "can't open display" even though everything is
+    installed (observed as an intermittent, code-identical CI failure).
+    Poll the display socket until it is actually there.
+    """
+    xvfb = subprocess.Popen(
+        ["Xvfb", display, "-screen", "0", "1024x700x24"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sock_path = "/tmp/.X11-unix/X" + display.lstrip(":")
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if xvfb.poll() is not None:
+            raise RuntimeError(f"Xvfb exited early (rc={xvfb.returncode})")
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                s.connect(sock_path)
+            finally:
+                s.close()
+            time.sleep(0.1)  # let the server finish its early init
+            return xvfb
+        except OSError:
+            time.sleep(0.05)
+    xvfb.terminate()
+    xvfb.wait(timeout=10)
+    raise RuntimeError(f"Xvfb not ready on {display} within 15 s")
 
 
 # --- fakes ------------------------------------------------------------------
@@ -395,7 +430,7 @@ for _ in range(5):
 eng.hook.events.put((0x41, True))
 eng.set_enabled(True)
 import time
-for _ in range(22):  # ~550 ms of real frame time -> attack (350 ms) completes
+for _ in range(28):  # ~700 ms of real frame time -> attack (350 ms) completes
     ui.root.update()
     time.sleep(0.025)
 assert eng.steer_out < -0.5, "steer should ramp via UI loop"
@@ -413,10 +448,8 @@ print("UI-OK")
         f.write(code)
 
     env = dict(os.environ, SMOKE_DIR=tempfile.mkdtemp())
-    # xvfb-run needs xauth; drive Xvfb directly instead.
-    xvfb = subprocess.Popen(
-        ["Xvfb", ":7199", "-screen", "0", "1024x700x24"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # xvfb-run needs xauth; drive Xvfb directly instead (and wait for it).
+    xvfb = _start_xvfb(":7199")
     env["DISPLAY"] = ":7199"
     try:
         r = subprocess.run([sys.executable, script], env=env,
@@ -809,7 +842,7 @@ assert eng.steer_out < -0.5, eng.steer_out
 assert (True, 1, 2) in eng.vjoy.btn_log, eng.vjoy.btn_log
 
 # staleness works through the live loop too: stop sending, pedal eases out
-for _ in range(30):
+for _ in range(40):
     ui.root.update()
     time.sleep(0.025)
 assert eng.throttle_out < 0.1, f"stale phone should decay, got {{eng.throttle_out}}"
@@ -831,9 +864,7 @@ print("PHONE-INT-OK")
         f.write(code)
 
     env = dict(os.environ, SMOKE_DIR=tempfile.mkdtemp())
-    xvfb = subprocess.Popen(
-        ["Xvfb", ":7199", "-screen", "0", "1024x700x24"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    xvfb = _start_xvfb(":7199")
     env["DISPLAY"] = ":7199"
     try:
         r = subprocess.run([sys.executable, script], env=env,
