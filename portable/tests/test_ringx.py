@@ -10,6 +10,7 @@ behavior with a fake vJoy + fake hook, and a headless UI smoke test
 
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,63 @@ def check(name, cond):
     assert cond, f"FAILED: {name}"
     PASS += 1
     print(f"  ok  {name}")
+
+
+# --- ui prerequisites (self-provisioning on bare CI images) -------------------
+
+def _missing_ui_packages():
+    """apt packages the headless UI sections need ([] when all present)."""
+    missing = []
+    try:
+        import tkinter  # noqa: F401
+    except Exception:
+        missing.append("python3-tk")
+    if shutil.which("Xvfb") is None:
+        missing.append("xvfb")
+    return missing
+
+
+def _install_ui_packages(packages):
+    """apt-get install the missing packages (sudo unless already root)."""
+    sudo = [] if os.geteuid() == 0 else ["sudo"]
+    cmds = [sudo + ["apt-get", "update", "-qq"],
+            sudo + ["apt-get", "install", "-y", "-qq"] + packages]
+    for cmd in cmds:
+        if os.environ.get("RINGX_TEST_APT_DRYRUN"):
+            print("  dry-run:", " ".join(cmd))
+            continue
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"{' '.join(cmd)} -> exit {r.returncode}\n"
+                               f"{r.stderr[-400:]}")
+
+
+def ensure_ui_prereqs():
+    """Install tkinter/Xvfb on demand so CI runs the full suite for real.
+
+    Bare CI images (e.g. ubuntu-latest) ship neither package, and the
+    Xvfb-driven sections would otherwise crash. Locally both are normally
+    present and this is a no-op. Without sudo the suite degrades to its
+    documented skip paths instead of installing anything.
+    """
+    if sys.platform == "win32":
+        return
+    missing = _missing_ui_packages()
+    if not missing:
+        return
+    print("ui prerequisites missing:", ", ".join(missing))
+    if not (os.geteuid() == 0 or shutil.which("sudo")):
+        print("  no sudo available; install the packages above for the "
+              "full suite")
+        return
+    try:
+        _install_ui_packages(missing)
+        print("  installed:", ", ".join(missing))
+    except Exception as e:
+        print("  install failed:", e)
+    still = _missing_ui_packages()
+    if still:
+        print("  still missing after install:", ", ".join(still))
 
 
 # --- fakes ------------------------------------------------------------------
@@ -769,6 +827,7 @@ print("PHONE-INT-OK")
 
 
 if __name__ == "__main__":
+    ensure_ui_prereqs()
     test_shaper()
     test_profile()
     test_engine()
