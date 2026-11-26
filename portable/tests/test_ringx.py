@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 ".."))
@@ -52,18 +53,34 @@ def _missing_ui_packages():
 
 
 def _install_ui_packages(packages):
-    """apt-get install the missing packages (sudo unless already root)."""
+    """apt-get install the missing packages (sudo unless already root).
+
+    CI package mirrors occasionally hiccup (hash-sum mismatches while a
+    mirror syncs); a short retry loop makes provisioning solid.
+    """
     sudo = [] if os.geteuid() == 0 else ["sudo"]
     cmds = [sudo + ["apt-get", "update", "-qq"],
             sudo + ["apt-get", "install", "-y", "-qq"] + packages]
-    for cmd in cmds:
-        if os.environ.get("RINGX_TEST_APT_DRYRUN"):
-            print("  dry-run:", " ".join(cmd))
-            continue
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0:
-            raise RuntimeError(f"{' '.join(cmd)} -> exit {r.returncode}\n"
-                               f"{r.stderr[-400:]}")
+
+    def run_all():
+        for cmd in cmds:
+            if os.environ.get("RINGX_TEST_APT_DRYRUN"):
+                print("  dry-run:", " ".join(cmd))
+                continue
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"{' '.join(cmd)} -> exit {r.returncode}\n"
+                                   f"{r.stderr[-400:]}")
+
+    for attempt in (1, 2, 3):
+        try:
+            run_all()
+            return
+        except Exception as e:
+            print(f"  apt attempt {attempt} failed: {e}")
+            if attempt < 3:
+                time.sleep(5 * attempt)
+    raise RuntimeError("apt-get failed after 3 attempts")
 
 
 def ensure_ui_prereqs():
@@ -86,12 +103,18 @@ def ensure_ui_prereqs():
         return
     try:
         _install_ui_packages(missing)
-        print("  installed:", ", ".join(missing))
+        if not os.environ.get("RINGX_TEST_APT_DRYRUN"):
+            print("  installed:", ", ".join(missing))
     except Exception as e:
         print("  install failed:", e)
     still = _missing_ui_packages()
-    if still:
-        print("  still missing after install:", ", ".join(still))
+    if still and not os.environ.get("RINGX_TEST_APT_DRYRUN"):
+        # The headless UI sections cannot run without these packages; fail
+        # now with a clear reason instead of a confusing FileNotFoundError
+        # crashing the suite halfway through.
+        print("FATAL: required packages still missing after install "
+              f"attempts: {', '.join(still)}", file=sys.stderr)
+        sys.exit(2)
 
 
 # --- fakes ------------------------------------------------------------------
