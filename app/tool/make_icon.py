@@ -7,7 +7,7 @@ anywhere inside the repo:
     python -m pip install pillow
     python tool/make_icon.py
 
-Writes windows/runner/resources/app_icon.ico (the file referenced byRunner.rc). CI runs this step automatically before building.
+Writes windows/runner/resources/app_icon.ico (the file referenced byRunner.rc). CI runs this step automatically before building.
 """
 import math
 import os
@@ -22,6 +22,10 @@ HUB = (245, 165, 36, 255)
 OUT = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..",
     "windows", "runner", "resources", "app_icon.ico"))
+
+# Fresh checkouts have no windows/runner/resources/ directory yet; create it
+# so the save below never fails with FileNotFoundError (CI runs on a clean tree).
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
 
 
 def draw_icon(size: int) -> Image.Image:
