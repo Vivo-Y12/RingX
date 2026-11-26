@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../core/engine.dart';
 import '../core/profile.dart';
 import '../core/shaper.dart';
-import '../core/vk_names.dart';
 import 'widgets.dart';
 
 class MappingScreen extends StatefulWidget {
@@ -155,7 +154,7 @@ class _MappingScreenState extends State<MappingScreen> {
                   for (final a in Act.values)
                     DropdownMenuItem(value: a, child: Text(a.label)),
                 ],
-                onChanged: (a) => setDialog(() => act = a!),r
+                onChanged: (a) => setDialog(() => act = a!),
               ),
               if (act == Act.button) ...[
                 const SizedBox(height: 12),

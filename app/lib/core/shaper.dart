@@ -73,7 +73,7 @@ int _clampInt(dynamic v, int min, int max, int fallback) {
 }
 
 double _clampDouble(num? v, double min, double max, double fallback) {
-  final d = v ?? fallback;
+  final d = (v ?? fallback).toDouble();
   return d < min ? min : (d > max ? max : d);
 }
 
@@ -106,7 +106,7 @@ class AxisShaper {
   /// Maps a raw ramp magnitude through the curve and anti-deadzone floor.
   static double shape(double v, AxisConfig cfg) {
     final m = v.abs().clamp(0.0, 1.0);
-    final double out = switch (cfg.curve) {
+    double out = switch (cfg.curve) {
       ResponseCurve.linear => m,
       ResponseCurve.smooth => m * m * (3 - 2 * m), // smoothstep
       ResponseCurve.aggressive => m <= 0 ? 0.0 : 1 - (1 - m) * (1 - m),

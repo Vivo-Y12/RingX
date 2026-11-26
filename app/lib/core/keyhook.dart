@@ -21,7 +21,7 @@ class RawKeyEvent {
 }
 
 class KeyHook {
-  NativeCallable<void Function(int, int)>? _callable;
+  NativeCallable<Void Function(Uint32, Int32)>? _callable;
   final _events = StreamController<RawKeyEvent>.broadcast();
   bool _started = false;
 
@@ -45,7 +45,7 @@ class KeyHook {
     final proc = DynamicLibrary.process();
     final start = proc.lookupFunction<_StartC, _StartD>('ringx_hook_start');
     _stop = proc.lookupFunction<_StopC, _StopD>('ringx_hook_stop');
-    _callable = NativeCallable<void Function(int, int)>.listener((vk, down) {
+    _callable = NativeCallable<Void Function(Uint32, Int32)>.listener((vk, down) {
       if (!_events.isClosed) {
         _events.add(RawKeyEvent(vk, down != 0));
       }

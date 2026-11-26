@@ -121,7 +121,7 @@ class Profile {
       bindings: rawBindings is List
           ? [
               for (final b in rawBindings)
-                if (b is Map) Binding.fromJson(b),
+                if (b is Map) Binding.fromJson(Map<String, dynamic>.from(b)),
             ]
           : const [],
     );
