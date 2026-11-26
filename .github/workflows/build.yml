@@ -54,7 +54,7 @@ jobs:
 
       - name: Package the exe folder
         shell: pwsh
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath ..\..\RingX-app-windows.zip
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath ..\RingX-app-windows.zip
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
