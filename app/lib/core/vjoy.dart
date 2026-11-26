@@ -27,6 +27,7 @@ const String _dllName = 'vJoyInterface.dll';
 
 typedef _BoolFn = Int32 Function();
 typedef _BoolFnU = Int32 Function(Uint32);
+typedef _BoolFnB = Int32 Function(Uint32, Uint32);
 typedef _SetAxisC = Int32 Function(Int32, Uint32, Uint32);
 typedef _SetBtnC = Int32 Function(Int32, Uint32, Uint8);
 typedef _AxisLimC = Int32 Function(Uint32, Uint32, Pointer<Int32>);
@@ -67,7 +68,7 @@ class Vjoy {
   late final int Function(int) _exists =
       _lib.lookupFunction<_BoolFnU, int Function(int)>('isVJDExists');
   late final int Function(int, int) _axisExists =
-      _lib.lookupFunction<_BoolFnU, int Function(int, int)>('GetVJDAxisExist');
+      _lib.lookupFunction<_BoolFnB, int Function(int, int)>('GetVJDAxisExist');
   late final int Function(int, int, Pointer<Int32>) _axisMax =
       _lib.lookupFunction<_AxisLimC, int Function(int, int, Pointer<Int32>)>(
           'GetVJDAxisMax');

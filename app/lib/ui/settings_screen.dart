@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../core/engine.dart';
 import '../core/profile.dart';
-import '../core/vk_names.dart';
 import 'widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
