@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Ringx app icon: dark disc, amber ring gauge with a gap + center dot.
 
-Original art, saved as a multi-size .ico for the Windows runner. Run from
-anywhere inside the repo:
+Original art. Two outputs:
 
-    python -m pip install pillow
-    python tool/make_icon.py
+  python tool/make_icon.py            -> windows/runner/resources/app_icon.ico
+  python tool/make_icon.py --android  -> android mipmap launcher PNGs
 
-Writes windows/runner/resources/app_icon.ico (the file referenced byRunner.rc). CI runs this step automatically before building.
+Run from anywhere inside the repo (CI runs both before building). Requires
+Pillow:  python -m pip install pillow
 """
 import math
 import os
+import sys
 
 from PIL import Image, ImageDraw
 
@@ -19,13 +20,19 @@ RING = (245, 165, 36, 255)    # #F5A524 amber
 RING_DIM = (58, 64, 77, 255)  # #3A404D
 HUB = (245, 165, 36, 255)
 
-OUT = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..",
-    "windows", "runner", "resources", "app_icon.ico"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT_ICO = os.path.normpath(
+    os.path.join(HERE, "..", "windows", "runner", "resources",
+                 "app_icon.ico"))
 
-# Fresh checkouts have no windows/runner/resources/ directory yet; create it
-# so the save below never fails with FileNotFoundError (CI runs on a clean tree).
-os.makedirs(os.path.dirname(OUT), exist_ok=True)
+# Android launcher PNGs (plain bitmaps; launchers mask them themselves).
+ANDROID_MIPMAPS = {
+    "mdpi": 48,
+    "hdpi": 72,
+    "xhdpi": 96,
+    "xxhdpi": 144,
+    "xxxhdpi": 192,
+}
 
 
 def draw_icon(size: int) -> Image.Image:
@@ -57,12 +64,39 @@ def draw_icon(size: int) -> Image.Image:
     return img
 
 
-base = draw_icon(256)
-base.save(OUT, format="ICO",
-          sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128),
-                 (256, 256)])
-print("saved", OUT)
+def write_ico() -> None:
+    # Fresh checkouts have no windows/runner/resources/ directory yet; create
+    # it so the save never fails with FileNotFoundError on a clean tree.
+    os.makedirs(os.path.dirname(OUT_ICO), exist_ok=True)
+    base = draw_icon(256)
+    base.save(OUT_ICO, format="ICO",
+              sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128),
+                     (256, 256)])
+    print("saved", OUT_ICO)
+    # Self-check: reopen and confirm it decodes.
+    im = Image.open(OUT_ICO)
+    print("decoded:", im.size, im.mode, "frames:", getattr(im, "n_frames", 1))
 
-# Self-check: reopen and confirm it decodes.
-im = Image.open(OUT)
-print("decoded:", im.size, im.mode, "frames:", getattr(im, "n_frames", 1))
+
+def write_android() -> None:
+    """Launcher icons into android/app/src/main/res/mipmap-*/ic_launcher.png.
+
+    The PNGs are not committed (binary files); CI regenerates them here so a
+    fresh checkout still has every resource the manifest references.
+    """
+    res = os.path.normpath(
+        os.path.join(HERE, "..", "android", "app", "src", "main", "res"))
+    base = draw_icon(512)
+    for bucket, px in ANDROID_MIPMAPS.items():
+        out_dir = os.path.join(res, f"mipmap-{bucket}")
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, "ic_launcher.png")
+        base.resize((px, px), Image.LANCZOS).save(out, "PNG")
+        print("saved", out, f"({px}x{px})")
+
+
+if __name__ == "__main__":
+    if "--android" in sys.argv[1:]:
+        write_android()
+    else:
+        write_ico()

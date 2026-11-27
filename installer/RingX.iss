@@ -13,7 +13,7 @@
 ;     skipifsourcedoesntexist flag keeps hand builds working without it)
 
 #define MyAppName "RingX"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "RingX Project"
 #define MyAppExeName "ringx.exe"
 #define MyAppURL "https://github.com/Vivo-Y12/RingX"
