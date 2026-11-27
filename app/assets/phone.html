@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Ringx Phone Controller</title>
+<style>
+  :root { --bg:#0E1116; --card:#16181D; --edge:#2A2E36; --amber:#F5A524;
+          --green:#46A758; --red:#E5484D; --muted:#7A8089; --fg:#E7E9EE; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent;
+      user-select: none; -webkit-user-select: none; }
+  html, body { margin:0; height:100%; overflow:hidden; background:var(--bg);
+      color:var(--fg); font-family:system-ui, "Segoe UI", Roboto, sans-serif;
+      touch-action:none; position:fixed; inset:0; }
+  #app { display:flex; flex-direction:column; height:100%; }
+
+  /* ---- top bar ---- */
+  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px;
+      background:var(--card); border-bottom:1px solid var(--edge); }
+  #dot { width:12px; height:12px; border-radius:50%; background:var(--red);
+      flex:0 0 auto; }
+  #dot.ok { background:var(--green); }
+  #name { font-size:clamp(13px, 2.5vw, 16px); font-weight:700; flex:1;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pill { border:1px solid var(--edge); background:var(--card); color:var(--fg);
+      border-radius:18px; padding:8px 14px; font-size:clamp(12px, 2.2vw, 14px);
+      font-weight:700; }
+  .pill.on { background:var(--amber); color:#14161B; border-color:var(--amber); }
+  #fs { padding:8px 10px; }
+
+  /* ---- main ---- */
+  #main { flex:1; display:flex; min-height:0; }
+  #wheelwrap { flex:1; display:flex; align-items:center; justify-content:center;
+      min-width:0; }
+  #wheel { display:block; }
+
+  #right { display:flex; flex-direction:column; gap:8px; padding:8px;
+      flex:0 0 auto; width:clamp(110px, 26vw, 180px); }
+  .pedal { flex:1; border-radius:14px; border:2px solid var(--edge);
+      display:flex; align-items:center; justify-content:center; flex-direction:column;
+      font-weight:800; font-size:clamp(13px, 2.6vw, 17px); letter-spacing:1px; }
+  .pedal span { opacity:.9; }
+  .pedal .v { font-size:clamp(11px, 2vw, 13px); font-weight:600; opacity:.65; }
+  #thr { background:#12241a; color:var(--green); }
+  #thr.on { background:var(--green); color:#0b1f12; }
+  #brk { background:#2a1518; color:var(--red); }
+  #brk.on { background:var(--red); color:#250d0f; }
+  #btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .btn { height:clamp(44px, 9vh, 64px); border-radius:12px;
+      border:2px solid var(--edge); background:var(--card); color:var(--muted);
+      font-weight:800; font-size:clamp(14px, 3vw, 18px); }
+  .btn.on { background:var(--amber); color:#14161B; border-color:var(--amber); }
+
+  /* ---- connect form (file:// mode) ---- */
+  #form { position:absolute; inset:0; background:var(--bg); display:none;
+      flex-direction:column; align-items:center; justify-content:center;
+      gap:14px; padding:24px; z-index:30; }
+  #form.show { display:flex; }
+  #form h2 { margin:0; font-size:clamp(18px, 5vw, 24px); }
+  #form p { margin:0; color:var(--muted); font-size:clamp(12px, 3vw, 14px);
+      text-align:center; line-height:1.5; }
+  #ip { width:min(340px, 86vw); padding:12px 14px; border-radius:10px;
+      border:2px solid var(--edge); background:var(--card); color:var(--fg);
+      font-size:18px; text-align:center; outline:none; }
+  #ip:focus { border-color:var(--amber); }
+
+  /* ---- portrait hint ---- */
+  #rotate { position:absolute; inset:0; background:rgba(14,17,22,.94);
+      display:none; flex-direction:column; align-items:center;
+      justify-content:center; gap:10px; z-index:40; text-align:center; }
+  #rotate .ph { font-size:clamp(40px, 18vw, 84px); }
+  #rotate div { font-size:clamp(14px, 4vw, 18px); font-weight:700; }
+  #rotate small { color:var(--muted); font-size:clamp(12px, 3vw, 14px); }
+  @media (orientation: portrait) {
+    #rotate.show { display:flex; }
+    #main { flex-direction:column; }
+    #wheelwrap { flex:1; }
+    #right { width:100%; flex:0 0 auto; height:34vh;
+        flex-direction:row; }
+    #btns { grid-template-columns:repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bar">
+    <div id="dot"></div>
+    <div id="name">Ringx Controller</div>
+    <button class="pill" id="map">MAP OFF</button>
+    <button class="pill" id="tilt">TILT</button>
+    <button class="pill" id="fs">⛶</button>
+  </div>
+  <div id="main">
+    <div id="wheelwrap"><canvas id="wheel"></canvas></div>
+    <div id="right">
+      <div class="pedal" id="thr"><span>THROTTLE</span><span class="v">0%</span></div>
+      <div class="pedal" id="brk"><span>BRAKE</span><span class="v">0%</span></div>
+      <div id="btns">
+        <button class="btn" data-b="1">1</button>
+        <button class="btn" data-b="2">2</button>
+        <button class="btn" data-b="3">3</button>
+        <button class="btn" data-b="4">4</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="form">
+  <h2>Ringx Controller</h2>
+  <p>Enter the address shown in Ringx on your PC.<br>Example: <b>192.168.1.5:9870</b></p>
+  <input id="ip" inputmode="url" autocapitalize="off" autocorrect="off"
+         placeholder="192.168.1.5:9870">
+  <button class="pill on" id="go">Connect</button>
+</div>
+
+<div id="rotate">
+  <div class="ph">📱↔️</div>
+  <div>Rotate your phone sideways</div>
+  <small>for the racing layout</small>
+  <button class="pill" id="anyway">use it like this</button>
+</div>
+
+<script>
+"use strict";
+(function () {
+  var MAXA = 135 * Math.PI / 180;      // full wheel lock = 135 degrees
+  var state = { steer: 0, thr: 0, brk: 0, btns: {} };
+  var mapped = false, ws = null, wsUrl = null, retries = 0;
+  var tiltOn = false, tiltZero = null, tiltOk = false;
+  var spring = null;
+
+  // ---------- wheel canvas ----------
+  var cv = document.getElementById("wheel"), cx = 0, cy = 0, R = 0;
+  function resize() {
+    var wrap = document.getElementById("wheelwrap");
+    var w = wrap.clientWidth - 12, h = wrap.clientHeight - 12;
+    var d = Math.max(120, Math.min(w, h));
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = d * dpr; cv.height = d * dpr;
+    cv.style.width = d + "px"; cv.style.height = d + "px";
+    var g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    R = d / 2; cx = d / 2; cy = d / 2;
+    draw();
+  }
+  function draw() {
+    var g = cv.getContext("2d");
+    g.clearRect(0, 0, cx * 2, cy * 2);
+    g.save(); g.translate(cx, cy);
+    // progress arc
+    g.beginPath(); g.strokeStyle = "rgba(70,74,82,.9)"; g.lineWidth = 8;
+    g.arc(0, 0, R - 6, -Math.PI * 0.75, Math.PI * 0.75); g.stroke();
+    if (Math.abs(state.steer) > 0.004) {
+      g.beginPath(); g.strokeStyle = "#F5A524"; g.lineWidth = 8;
+      var a = -Math.PI / 2;
+      g.arc(0, 0, R - 6, Math.min(a, a + state.steer * 1.5 * Math.PI * 0.75),
+            Math.max(a, a + state.steer * 1.5 * Math.PI * 0.75)); g.stroke();
+    }
+    g.rotate(state.steer * MAXA);
+    // rim
+    g.beginPath(); g.lineWidth = 14; g.strokeStyle = "#39404D";
+    g.arc(0, 0, R - 26, 0, Math.PI * 2); g.stroke();
+    // spokes
+    g.lineCap = "round"; g.lineWidth = 11; g.strokeStyle = "#2C313B";
+    for (var i = 0; i < 3; i++) {
+      var a2 = Math.PI / 2 + i * 2 * Math.PI / 3;
+      g.beginPath(); g.moveTo(0, 0);
+      g.lineTo(Math.cos(a2) * (R - 26), Math.sin(a2) * (R - 26)); g.stroke();
+    }
+    // hub
+    g.beginPath(); g.fillStyle = "#F5A524";
+    g.arc(0, 0, Math.max(14, R * 0.14), 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#0E1116"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "bold " + Math.max(10, R * 0.11) + "px system-ui";
+    g.fillText(pct(), 0, 0);
+    g.restore();
+  }
+  function pct() {
+    var s = state.steer;
+    if (Math.abs(s) < 0.005) return "C";
+    return (s < 0 ? "L " : "R ") + Math.round(Math.abs(s) * 100);
+  }
+
+  // ---------- wheel touch ----------
+  function angleAt(e) {
+    var r = cv.getBoundingClientRect();
+    var dx = e.clientX - (r.left + r.width / 2);
+    var dy = e.clientY - (r.top + r.height / 2);
+    return Math.atan2(dx, -dy);      // 0 = up, + = right
+  }
+  cv.addEventListener("pointerdown", function (e) {
+    if (tiltOn) return;
+    cancelSpring();
+    cv.setPointerCapture(e.pointerId);
+    state.steer = clamp(angleAt(e) / MAXA);
+    draw();
+  });
+  cv.addEventListener("pointermove", function (e) {
+    if (tiltOn || !cv.hasPointerCapture(e.pointerId)) return;
+    state.steer = clamp(angleAt(e) / MAXA);
+    draw();
+  });
+  function endPointer(e) {
+    if (tiltOn || !cv.hasPointerCapture(e.pointerId)) return;
+    spring = requestAnimationFrame(springBack);
+  }
+  cv.addEventListener("pointerup", endPointer);
+  cv.addEventListener("pointercancel", endPointer);
+  function springBack() {
+    state.steer = clamp(state.steer * 0.82);
+    draw();
+    if (Math.abs(state.steer) > 0.003) spring = requestAnimationFrame(springBack);
+    else { state.steer = 0; draw(); }
+  }
+  function cancelSpring() {
+    if (spring) { cancelAnimationFrame(spring); spring = null; }
+  }
+  function clamp(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
+
+  // ---------- tilt steering ----------
+  document.getElementById("tilt").addEventListener("click", function () {
+    if (!tiltOn) {
+      var enable = function () {
+        tiltOn = true; tiltOk = false; tiltZero = null;
+        setBtn("tilt", true); cancelSpring(); state.steer = 0; draw();
+        window.addEventListener("deviceorientation", onOrient);
+        setTimeout(function () {
+          if (tiltOn && !tiltOk) stopTilt("tilt not available - touch mode");
+        }, 900);
+      };
+      var D = window.DeviceOrientationEvent;
+      if (D && typeof D.requestPermission === "function") {
+        D.requestPermission().then(function (r) {
+          if (r === "granted") enable(); else stopTilt("tilt denied");
+        }).catch(function () { stopTilt("tilt denied"); });
+      } else if (D) { enable(); }
+      else { stopTilt("tilt not available - touch mode"); }
+    } else { stopTilt("touch mode"); }
+  });
+  function onOrient(ev) {
+    if (!tiltOn) return;
+    tiltOk = true;
+    var ang = (screen.orientation && screen.orientation.angle) ||
+              window.orientation || 0;
+    var raw = (ang === 90 ? ev.beta : ang === 270 ? -ev.beta : ev.gamma) || 0;
+    if (tiltZero === null) tiltZero = raw;          // calibrate on first event
+    state.steer = clamp((raw - tiltZero) / 45);
+    draw();
+  }
+  function stopTilt(msg) {
+    tiltOn = false; setBtn("tilt", false);
+    window.removeEventListener("deviceorientation", onOrient);
+    if (msg) flash(msg);
+  }
+
+  // ---------- pedals + buttons ----------
+  function hold(el, on, off) {
+    el.addEventListener("pointerdown", function (e) {
+      el.setPointerCapture(e.pointerId); el.classList.add("on"); on();
+    });
+    function done(e) { el.classList.remove("on"); off(); }
+    el.addEventListener("pointerup", done);
+    el.addEventListener("pointercancel", done);
+  }
+  var thr = document.getElementById("thr"),
+      brk = document.getElementById("brk");
+  hold(thr, function () { state.thr = 1; },
+            function () { state.thr = 0; });
+  hold(brk, function () { state.brk = 1; },
+            function () { state.brk = 0; });
+  Array.prototype.forEach.call(
+      document.querySelectorAll(".btn[data-b]"), function (el) {
+    hold(el, function () { state.btns[el.dataset.b] = 1; setBtn(el, true); },
+              function () { delete state.btns[el.dataset.b]; setBtn(el, false); });
+  });
+  function setBtn(el, on) {
+    var node = typeof el === "string"
+        ? document.getElementById(el) : el;
+    if (node) node.classList.toggle("on", !!on);
+  }
+
+  // ---------- map toggle + fullscreen ----------
+  document.getElementById("map").addEventListener("click", function () {
+    sendNow({ t: "toggle" });                    // PC replies with stat
+    flash("toggled on PC");
+  });
+  document.getElementById("fs").addEventListener("click", function () {
+    var d = document.documentElement;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (d.requestFullscreen) d.requestFullscreen();
+  });
+  function setMap(on) {
+    mapped = !!on;
+    var m = document.getElementById("map");
+    m.textContent = mapped ? "MAP ON" : "MAP OFF";
+    m.classList.toggle("on", mapped);
+  }
+
+  // ---------- connection ----------
+  function connect(url) {
+    wsUrl = url;
+    try { ws = new WebSocket(url); } catch (e) { formFail(); return; }
+    ws.onopen = function () {
+      retries = 0; dot(true);
+      document.getElementById("form").classList.remove("show");
+    };
+    ws.onmessage = function (m) {
+      var d = null; try { d = JSON.parse(m.data); } catch (e) { return; }
+      if (d && d.t === "stat") setMap(d.enabled);
+    };
+    ws.onclose = function () { dot(false); retry(); };
+    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+  }
+  function retry() {
+    if (!wsUrl) return;
+    retries++;
+    if (!location.host && retries >= 3) { formFail(); return; }
+    setTimeout(function () { if (ws && ws.readyState > 1) connect(wsUrl); },
+               1500);
+  }
+  function formFail() {
+    var f = document.getElementById("form");
+    f.classList.add("show");
+    var p = f.querySelector("p");
+    if (retries >= 3) p.innerHTML = "Could not reach the PC.<br>Check " +
+        "both are on the same Wi-Fi, then enter the address again:";
+  }
+  function dot(ok) {
+    document.getElementById("dot").classList.toggle("ok", !!ok);
+  }
+  document.getElementById("go").addEventListener("click", function () {
+    var v = document.getElementById("ip").value.trim().replace(
+        /^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!v) { flash("enter PC address"); return; }
+    try { localStorage.setItem("ringxHost", v); } catch (e) {}
+    connect("ws://" + v + "/ws");
+  });
+  document.getElementById("ip").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") document.getElementById("go").click();
+  });
+
+  // ---------- send loop ----------
+  function payload() {
+    return { t: "state", s: +state.steer.toFixed(3),
+             th: state.thr, br: state.brk,
+             bt: Object.keys(state.btns).map(Number) };
+  }
+  setInterval(function () {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(payload()));
+    var tv = thr.querySelector(".v"), bv = brk.querySelector(".v");
+    tv.textContent = Math.round(state.thr * 100) + "%";
+    bv.textContent = Math.round(state.brk * 100) + "%";
+  }, 50);
+  function sendNow(obj) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  }
+
+  // ---------- misc ----------
+  var flashT = null;
+  function flash(msg) {
+    var n = document.getElementById("name");
+    n.textContent = msg; clearTimeout(flashT);
+    flashT = setTimeout(function () { n.textContent = "Ringx Controller"; },
+                        1800);
+  }
+  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  window.addEventListener("resize", resize);
+  document.getElementById("anyway").addEventListener("click", function () {
+    document.getElementById("rotate").classList.remove("show");
+  });
+  window.addEventListener("orientationchange", function () {
+    setTimeout(function () {
+      document.getElementById("rotate").classList.toggle(
+          "show", window.innerHeight > window.innerWidth);
+      resize();
+    }, 300);
+  });
+
+  // ---------- boot ----------
+  resize();
+  setTimeout(resize, 60);            // after real layout settles
+  if (location.protocol.startsWith("http") && location.host) {
+    connect((location.protocol === "https:" ? "wss://" : "ws://")
+            + location.host + "/ws");
+  } else {
+    var saved = null;
+    try { saved = localStorage.getItem("ringxHost"); } catch (e) {}
+    var f = document.getElementById("form");
+    f.classList.add("show");
+    if (saved) {
+      document.getElementById("ip").value = saved;
+      connect("ws://" + saved + "/ws");   // try the last PC straight away
+    }
+  }
+  document.getElementById("rotate").classList.toggle(
+      "show", window.innerHeight > window.innerWidth);
+})();
+</script>
+</body>
+</html>
