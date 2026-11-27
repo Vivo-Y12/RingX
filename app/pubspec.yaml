@@ -1,7 +1,8 @@
 name: ringx
-description: Ringx — keyboard to virtual racing controller (vJoy feeder) for Windows.
+description: RingX — keyboard + phone to virtual racing controller (vJoy
+  feeder) for Windows, plus the Android touch-controller app.
 publish_to: none
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: ^3.5.0
@@ -10,11 +11,30 @@ dependencies:
   flutter:
     sdk: flutter
   ffi: ^2.1.0
+  # QR code shown by the receiver (pure Dart, renders on every platform).
+  qr_flutter: ^4.1.0
+  # Camera QR scanning on the phone controller (Android/iOS only; the
+  # Windows build skips plugins without a windows implementation).
+  mobile_scanner: ^7.0.0
+  # Tilt steering on the phone. 5.x deliberately: 6.x pulls package:jni,
+  # which compiles native code (CMake + full Android NDK) for no benefit
+  # here — 5.x is a plain platform channel and works identically.
+  sensors_plus: ^5.0.1
+  # Phone-side template + connection persistence.
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+dependency_overrides:
+  # shared_preferences_android 2.5+ pulls package:jni, which compiles a full
+  # CMake + Android-NDK native module for zero API difference here.
+  # 2.4.28 is the last plain implementation; the Dart API is identical.
+  shared_preferences_android: 2.4.28
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/phone.html
