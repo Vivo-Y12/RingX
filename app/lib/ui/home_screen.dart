@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../core/engine.dart';
 import '../core/profile.dart';
 import '../core/vk_names.dart';
+import 'phone_panel.dart';
 import 'widgets.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -62,6 +63,8 @@ class HomeScreen extends StatelessWidget {
                 _Controls(engine: engine, cs: cs),
               ],
             ),
+            const SizedBox(height: 24),
+            PhonePanel(engine: engine),
             const SizedBox(height: 24),
             Text('Recent keys', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),

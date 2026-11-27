@@ -54,4 +54,68 @@ void main() {
       expect(AxisShaper.shape(-0.5, cfg), lessThan(0));
     });
   });
+
+  group('Steering calibration params', () {
+    test('steering limit caps the output magnitude', () {
+      const cfg = AxisConfig(
+          curve: ResponseCurve.linear,
+          antiDeadzone: 0,
+          steeringLimit: 0.6);
+      expect(AxisShaper.shape(1, cfg), closeTo(0.6, 1e-9));
+      expect(AxisShaper.shape(-1, cfg), closeTo(-0.6, 1e-9));
+      expect(AxisShaper.shape(0.5, cfg), closeTo(0.3, 1e-9));
+    });
+
+    test('neutral offset shifts the neutral point', () {
+      const cfg = AxisConfig(
+          curve: ResponseCurve.linear,
+          antiDeadzone: 0,
+          neutralOffset: -0.1);
+      // Wheel at 0 now outputs -0.1 (a wheel resting off-center).
+      expect(AxisShaper.shape(0, cfg), closeTo(-0.1, 1e-9));
+      // +0.1 of input brings it to true neutral.
+      expect(AxisShaper.shape(0.1, cfg), closeTo(0, 1e-9));
+    });
+
+    test('offset + limit compose: output stays within the cap', () {
+      const cfg = AxisConfig(
+          curve: ResponseCurve.linear,
+          antiDeadzone: 0,
+          neutralOffset: 0.25,
+          steeringLimit: 0.5);
+      expect(AxisShaper.shape(1, cfg), closeTo(0.5, 1e-9));
+      // The offset shifts neutral, so the negative side does not reach the
+      // cap — but it must never exceed it.
+      final neg = AxisShaper.shape(-1, cfg);
+      expect(neg, greaterThanOrEqualTo(-0.5));
+      expect(neg, lessThan(0));
+    });
+
+    test('defaults reproduce the plain curve (old files compatible)', () {
+      const plain = AxisConfig(
+          curve: ResponseCurve.linear, antiDeadzone: 0);
+      const defaulted = AxisConfig(
+          curve: ResponseCurve.linear, antiDeadzone: 0);
+      for (final v in [-1.0, -0.5, 0.0, 0.5, 1.0]) {
+        expect(AxisShaper.shape(v, defaulted),
+            AxisShaper.shape(v, plain));
+      }
+    });
+
+    test('json roundtrip keeps the new fields, clamps garbage', () {
+      const cfg = AxisConfig(steeringLimit: 0.7, neutralOffset: 0.12);
+      final back = AxisConfig.fromJson(cfg.toJson());
+      expect(back.steeringLimit, 0.7);
+      expect(back.neutralOffset, 0.12);
+      final hostile = AxisConfig.fromJson(const {
+        'steeringLimit': 5.0,
+        'neutralOffset': 12.0,
+      });
+      expect(hostile.steeringLimit, 1.0);
+      expect(hostile.neutralOffset, 0.3);
+      final missing = AxisConfig.fromJson(const {});
+      expect(missing.steeringLimit, 1.0);
+      expect(missing.neutralOffset, 0.0);
+    });
+  });
 }

@@ -6,7 +6,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'discovery.dart';
 import 'keyhook.dart';
+import 'phone_link.dart';
+import 'phone_proto.dart';
 import 'profile.dart';
 import 'shaper.dart';
 import 'vjoy.dart';
@@ -20,15 +23,35 @@ const Map<AxisId, List<int>> _axisCandidates = {
 };
 
 class MapperEngine extends ChangeNotifier {
-  MapperEngine({required this.store}) : profile = Profile.defaults();
+  MapperEngine({required this.store, Future<List<int>?> Function()? phonePageLoader})
+      : profile = Profile.defaults(),
+        _phonePageLoader = phonePageLoader;
 
   final ProfileStore store;
   Profile profile;
+  final Future<List<int>?> Function()? _phonePageLoader;
 
   final KeyHook _hook = KeyHook();
   Vjoy? _vjoy;
   Timer? _timer;
   StreamSubscription<RawKeyEvent>? _keySub;
+
+  // ---- Phone controller (WS link + live state) ---------------------------
+
+  PhoneLink? _phoneLink;
+  DiscoveryResponder? _discovery;
+  StreamSubscription<PhoneMsg>? _phoneSub;
+  StreamSubscription<bool>? _phoneClientSub;
+  final _templatesFromPhone =
+      StreamController<Map<String, dynamic>>.broadcast();
+  String? _phoneError;
+
+  double _phoneSteer = 0;
+  double _phoneTh = 0;
+  double _phoneBr = 0;
+  final Set<int> _phoneButtons = {};
+  final Set<int> _phonePressed = {}; // vJoy buttons the phone caused
+  int _phoneLastSeenMs = -100000;
 
   final Map<AxisId, AxisShaper> _shapers = {
     for (final a in AxisId.values) a: AxisShaper(),
@@ -85,6 +108,25 @@ class MapperEngine extends ChangeNotifier {
   /// Resolved vJoy usage per axis (for the status chips).
   Map<AxisId, int> get axisUsages => Map.unmodifiable(_usage);
 
+  /// True when a phone is connected over the WebSocket link.
+  bool get phoneConnected => _phoneLink?.connected ?? false;
+
+  /// Phone label from its hello message ('Redmi Note 12', ...).
+  String get phoneName => _phoneLink?.phoneName ?? 'Phone';
+
+  /// Bound phone-link port (may differ from the requested one).
+  int? get phonePort => _phoneLink?.port;
+
+  /// True when the phone server is listening.
+  bool get phoneServerRunning => _phoneLink?.running ?? false;
+
+  /// Last phone-link startup error, if any.
+  String? get phoneError => _phoneError;
+
+  /// Templates pushed by the phone (raw JSON, validated by the screen).
+  Stream<Map<String, dynamic>> get templatesFromPhone =>
+      _templatesFromPhone.stream;
+
   // ---- Lifecycle ---------------------------------------------------------
 
   /// Boots the engine: hook on, vJoy open + acquire, tick loop running.
@@ -95,6 +137,7 @@ class MapperEngine extends ChangeNotifier {
     _vjoy = Vjoy.tryOpen();
     _applyDevice();
     _restartTimer();
+    if (profile.phoneEnabled) unawaited(_startPhone());
     notifyListeners();
   }
 
@@ -104,6 +147,8 @@ class MapperEngine extends ChangeNotifier {
     _keySub?.cancel();
     _hook.dispose();
     _releaseDevice();
+    unawaited(_stopPhone());
+    _templatesFromPhone.close();
     super.dispose();
   }
 
@@ -117,6 +162,9 @@ class MapperEngine extends ChangeNotifier {
     profile = next;
     if (next.deviceId != old.deviceId) _applyDevice();
     if (next.tickMs != old.tickMs) _restartTimer();
+    if (next.phoneEnabled != old.phoneEnabled) {
+      next.phoneEnabled ? unawaited(_startPhone()) : unawaited(_stopPhone());
+    }
     _resetOutputs();
     notifyListeners();
     return store.save(next);
@@ -217,6 +265,7 @@ class MapperEngine extends ChangeNotifier {
       }
     }
     notifyListeners();
+    _phoneLink?.send(StatMsg(enabled: value));
   }
 
   void _setButton(int button, bool pressed) {
@@ -248,21 +297,140 @@ class MapperEngine extends ChangeNotifier {
 
   void _tick(double dtMs) {
     if (_enabled) {
-      _shapers[AxisId.steer]!
-          .step(dtMs, _steerTarget(), _axisCfg(AxisId.steer));
-      _shapers[AxisId.throttle]!
-          .step(dtMs, _keyTarget(Act.throttle), _axisCfg(AxisId.throttle));
-      _shapers[AxisId.brake]!
-          .step(dtMs, _keyTarget(Act.brake), _axisCfg(AxisId.brake));
+      if (_phoneFresh()) {
+        // A live phone is a real wheel: it reports position, not key state,
+        // so its values bypass the keyboard ramp (curve/limit still apply).
+        _shapers[AxisId.steer]!.value = _phoneSteer;
+        _shapers[AxisId.throttle]!.value = _phoneTh;
+        _shapers[AxisId.brake]!.value = _phoneBr;
+        _applyPhoneButtons();
+      } else {
+        _releasePhoneButtons();
+        _shapers[AxisId.steer]!
+            .step(dtMs, _steerTarget(), _axisCfg(AxisId.steer));
+        _shapers[AxisId.throttle]!
+            .step(dtMs, _keyTarget(Act.throttle), _axisCfg(AxisId.throttle));
+        _shapers[AxisId.brake]!
+            .step(dtMs, _keyTarget(Act.brake), _axisCfg(AxisId.brake));
+      }
     } else {
       // Ease back to neutral so the wheel visibly returns to center.
       for (final a in AxisId.values) {
         _shapers[a]!.step(dtMs, 0, _axisCfg(a));
       }
+      _releasePhoneButtons();
     }
     _writeAxes();
     _notifyThrottled();
   }
+
+  // ---- Phone controller ---------------------------------------------------
+
+  /// A phone is "fresh" for 0.5 s after its last state packet; after that
+  /// the keyboard takes over again (same rule as the Python edition).
+  bool _phoneFresh() => _nowMs() - _phoneLastSeenMs < 500;
+
+  static int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  void _onPhoneMsg(PhoneMsg msg) {
+    switch (msg) {
+      case PhoneStateMsg(
+          :final steer, :final throttle, :final brake, :final buttons):
+        _phoneSteer = steer;
+        _phoneTh = throttle;
+        _phoneBr = brake;
+        _phoneButtons
+          ..clear()
+          ..addAll(buttons);
+        _phoneLastSeenMs = _nowMs();
+      case ToggleMsg():
+        setEnabled(!enabled);
+      case HelloMsg():
+        notifyListeners(); // name lands on the dashboard
+      case StatMsg():
+        break; // phone-bound; the receiver ignores it
+      case TemplateMsg(:final template):
+        _templatesFromPhone.add(template);
+        notifyListeners();
+    }
+  }
+
+  /// Presses fresh phone buttons and releases the ones it let go of.
+  void _applyPhoneButtons() {
+    for (final btn in _phoneButtons) {
+      if (!_pressedButtons.contains(btn)) _setButton(btn, true);
+    }
+    for (final btn in _phonePressed.toList()) {
+      if (!_phoneButtons.contains(btn)) _setButton(btn, false);
+    }
+    _phonePressed
+      ..clear()
+      ..addAll(_phoneButtons);
+  }
+
+  /// Releases the vJoy buttons the phone had pressed (keyboard-held ones
+  /// stay down — both sources share the device).
+  void _releasePhoneButtons() {
+    for (final btn in _phonePressed.toList()) {
+      if (!_keyboardHoldsButton(btn)) _setButton(btn, false);
+    }
+    _phonePressed.clear();
+  }
+
+  bool _keyboardHoldsButton(int button) => profile.bindings.any((b) =>
+      b.act == Act.button && b.button == button && _held.contains(b.vk));
+
+  Future<void> _startPhone() async {
+    if (_phoneLink != null) return;
+    final link = PhoneLink(pageLoader: _phonePageLoader);
+    final (ok, err) = await link.start(profile.phonePort);
+    if (!ok) {
+      _phoneError = err;
+      notifyListeners();
+      return;
+    }
+    _phoneError = null;
+    _phoneLink = link;
+    _phoneSub = link.events.listen(_onPhoneMsg);
+    _phoneClientSub = link.clientChanges.listen((up) {
+      if (!up) {
+        _phoneButtons.clear();
+        _releasePhoneButtons();
+      }
+      notifyListeners();
+    });
+    // UDP discovery is optional: QR pairing works even when 5556 is taken.
+    final disco = DiscoveryResponder();
+    final (dok, derr) =
+        await disco.start(wsPortProvider: () => _phoneLink?.port ?? 0);
+    if (dok) {
+      _discovery = disco;
+    } else {
+      await disco.stop();
+      _phoneError = derr;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _stopPhone() async {
+    await _phoneSub?.cancel();
+    await _phoneClientSub?.cancel();
+    _phoneSub = null;
+    _phoneClientSub = null;
+    _phoneButtons.clear();
+    _releasePhoneButtons();
+    await _discovery?.stop();
+    _discovery = null;
+    final link = _phoneLink;
+    _phoneLink = null;
+    await link?.stop();
+    _phoneError = null;
+    notifyListeners();
+  }
+
+  /// Toggles the phone server live (and persists it in the profile).
+  (bool, String?) setPhoneEnabled(bool value) =>
+      applyProfile(profile.copyWith(phoneEnabled: value));
 
   AxisConfig _axisCfg(AxisId a) => profile.axes[a] ?? const AxisConfig();
 

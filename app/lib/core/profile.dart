@@ -53,6 +53,8 @@ class Profile {
     this.deviceId = 1,
     this.tickMs = 10,
     this.toggleVk = 0x77, // F8
+    this.phoneEnabled = true,
+    this.phonePort = 9870,
     this.axes = const {
       AxisId.steer: AxisConfig(attackMs: 350, decayMs: 180),
       AxisId.throttle: AxisConfig(attackMs: 250, decayMs: 120),
@@ -65,6 +67,13 @@ class Profile {
   final int deviceId;
   final int tickMs;
   final int toggleVk;
+
+  /// Serve the phone controller (WebSocket + QR) when true.
+  final bool phoneEnabled;
+
+  /// Requested phone-link port (binds port..port+20 on busy).
+  final int phonePort;
+
   final Map<AxisId, AxisConfig> axes;
   final List<Binding> bindings;
 
@@ -73,6 +82,8 @@ class Profile {
     int? deviceId,
     int? tickMs,
     int? toggleVk,
+    bool? phoneEnabled,
+    int? phonePort,
     Map<AxisId, AxisConfig>? axes,
     List<Binding>? bindings,
   }) =>
@@ -81,6 +92,8 @@ class Profile {
         deviceId: deviceId ?? this.deviceId,
         tickMs: tickMs ?? this.tickMs,
         toggleVk: toggleVk ?? this.toggleVk,
+        phoneEnabled: phoneEnabled ?? this.phoneEnabled,
+        phonePort: phonePort ?? this.phonePort,
         axes: axes ?? this.axes,
         bindings: bindings ?? this.bindings,
       );
@@ -90,6 +103,8 @@ class Profile {
         'deviceId': deviceId,
         'tickMs': tickMs,
         'toggleVk': toggleVk,
+        'phoneEnabled': phoneEnabled,
+        'phonePort': phonePort,
         'axes': {
           'steer': axes[AxisId.steer]?.toJson(),
           'throttle': axes[AxisId.throttle]?.toJson(),
@@ -107,6 +122,10 @@ class Profile {
       deviceId: _clampInt(json['deviceId'], 1, 16, 1),
       tickMs: _clampInt(json['tickMs'], 5, 50, 10),
       toggleVk: _clampInt(json['toggleVk'], 0x01, 0xFE, 0x77),
+      phoneEnabled: json['phoneEnabled'] is bool
+          ? json['phoneEnabled'] as bool
+          : true,
+      phonePort: _clampInt(json['phonePort'], 1024, 65535, 9870),
       axes: {
         AxisId.steer: rawAxes is Map
             ? AxisConfig.fromJson(rawAxes['steer'] ?? const {})

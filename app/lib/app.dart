@@ -7,11 +7,15 @@ import 'core/engine.dart';
 import 'ui/home_screen.dart';
 import 'ui/mapping_screen.dart';
 import 'ui/settings_screen.dart';
+import 'ui/templates_screen.dart';
 
 class RingxApp extends StatelessWidget {
-  const RingxApp({super.key, required this.engine});
+  const RingxApp({super.key, required this.engine, this.profileLoadError});
 
   final MapperEngine engine;
+
+  /// Non-null when the saved profile could not be loaded (defaults used).
+  final String? profileLoadError;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +24,7 @@ class RingxApp extends StatelessWidget {
       brightness: Brightness.dark,
     );
     return MaterialApp(
-      title: 'Ringx',
+      title: 'RingX Receiver',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,
@@ -34,15 +38,16 @@ class RingxApp extends StatelessWidget {
         ),
         dividerColor: const Color(0xFF23262E),
       ),
-      home: RingxShell(engine: engine),
+      home: RingxShell(engine: engine, profileLoadError: profileLoadError),
     );
   }
 }
 
 class RingxShell extends StatefulWidget {
-  const RingxShell({super.key, required this.engine});
+  const RingxShell({super.key, required this.engine, this.profileLoadError});
 
   final MapperEngine engine;
+  final String? profileLoadError;
 
   @override
   State<RingxShell> createState() => _RingxShellState();
@@ -56,6 +61,7 @@ class _RingxShellState extends State<RingxShell> {
     final cs = Theme.of(context).colorScheme;
     final screens = [
       HomeScreen(engine: widget.engine),
+      const TemplatesScreen(),
       MappingScreen(engine: widget.engine),
       SettingsScreen(engine: widget.engine),
     ];
@@ -81,7 +87,7 @@ class _RingxShellState extends State<RingxShell> {
                         size: 20, color: Color(0xFF7A8089)),
                   ),
                   const SizedBox(height: 6),
-                  Text('Ringx',
+                  Text('RingX',
                       style: TextStyle(
                           color: cs.primary,
                           fontWeight: FontWeight.w700,
@@ -96,6 +102,11 @@ class _RingxShellState extends State<RingxShell> {
                 label: Text('Dashboard'),
               ),
               NavigationRailDestination(
+                icon: Icon(Icons.grid_view_outlined),
+                selectedIcon: Icon(Icons.grid_view),
+                label: Text('Templates'),
+              ),
+              NavigationRailDestination(
                 icon: Icon(Icons.keyboard_command_key),
                 selectedIcon: Icon(Icons.keyboard),
                 label: Text('Mappings'),
@@ -108,7 +119,26 @@ class _RingxShellState extends State<RingxShell> {
             ],
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: screens[_index]),
+          Expanded(
+            child: Column(
+              children: [
+                if (widget.profileLoadError != null)
+                  Material(
+                    color: const Color(0xFF2A2313),
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.warning_amber_rounded,
+                          color: Color(0xFFF5A524)),
+                      title: Text(
+                        widget.profileLoadError!,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                Expanded(child: screens[_index]),
+              ],
+            ),
+          ),
         ],
       ),
     );

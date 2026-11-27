@@ -20,6 +20,8 @@ class AxisConfig {
     this.decayMs = 180,
     this.curve = ResponseCurve.smooth,
     this.antiDeadzone = 0.05,
+    this.steeringLimit = 1.0,
+    this.neutralOffset = 0.0,
   });
 
   /// Milliseconds from neutral to full lock (press direction).
@@ -35,17 +37,28 @@ class AxisConfig {
   /// deadzone engaged at all times so tiny inputs still steer.
   final double antiDeadzone;
 
+  /// Output cap (0.3–1.0): 'Steering Limit' — soft-clips the maximum angle.
+  final double steeringLimit;
+
+  /// Neutral bias (-0.3–0.3): 'Neutral Calibration Offset' for wheels that
+  /// sit slightly off-center.
+  final double neutralOffset;
+
   AxisConfig copyWith({
     int? attackMs,
     int? decayMs,
     ResponseCurve? curve,
     double? antiDeadzone,
+    double? steeringLimit,
+    double? neutralOffset,
   }) =>
       AxisConfig(
         attackMs: attackMs ?? this.attackMs,
         decayMs: decayMs ?? this.decayMs,
         curve: curve ?? this.curve,
         antiDeadzone: antiDeadzone ?? this.antiDeadzone,
+        steeringLimit: steeringLimit ?? this.steeringLimit,
+        neutralOffset: neutralOffset ?? this.neutralOffset,
       );
 
   Map<String, dynamic> toJson() => {
@@ -53,6 +66,8 @@ class AxisConfig {
         'decayMs': decayMs,
         'curve': curve.name,
         'antiDeadzone': antiDeadzone,
+        'steeringLimit': steeringLimit,
+        'neutralOffset': neutralOffset,
       };
 
   static AxisConfig fromJson(Map<String, dynamic> json) => AxisConfig(
@@ -64,6 +79,10 @@ class AxisConfig {
         ),
         antiDeadzone: _clampDouble(
             (json['antiDeadzone'] as num?)?.toDouble(), 0.0, 0.25, 0.05),
+        steeringLimit: _clampDouble(
+            (json['steeringLimit'] as num?)?.toDouble(), 0.3, 1.0, 1.0),
+        neutralOffset: _clampDouble(
+            (json['neutralOffset'] as num?)?.toDouble(), -0.3, 0.3, 0.0),
       );
 }
 
@@ -104,15 +123,21 @@ class AxisShaper {
   }
 
   /// Maps a raw ramp magnitude through the curve and anti-deadzone floor.
+  ///
+  /// Order: neutral offset is applied first (wheel calibration), then the
+  /// curve, then the output cap ('Steering Limit'), then the anti-deadzone
+  /// floor. Defaults (limit 1.0, offset 0.0) reproduce the plain curve.
   static double shape(double v, AxisConfig cfg) {
-    final m = v.abs().clamp(0.0, 1.0);
+    final raw = (v + cfg.neutralOffset).clamp(-1.0, 1.0);
+    final m = raw.abs();
     double out = switch (cfg.curve) {
       ResponseCurve.linear => m,
       ResponseCurve.smooth => m * m * (3 - 2 * m), // smoothstep
       ResponseCurve.aggressive => m <= 0 ? 0.0 : 1 - (1 - m) * (1 - m),
     };
+    out *= cfg.steeringLimit;
     if (out > 0 && out < cfg.antiDeadzone) out = cfg.antiDeadzone;
-    return v < 0 ? -out : out;
+    return raw < 0 ? -out : out;
   }
 
   /// Snaps to neutral (used when mapping is disabled).
